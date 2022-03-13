@@ -5,7 +5,7 @@ import math
 procesos = int(input("Ingrese la cantidad de procesos: "))
 procesosC = procesos
 #intervalo = int(input("Ingrese el intervalo de entrada de procesos: "))
-intervalo = 10
+intervalo = 1
 tiempos = []
 random.seed(10)
 
@@ -19,47 +19,54 @@ def std(data):
     variance = sum(deviations) / n
     return math.sqrt(variance)
 
-def genProceso(env, env1, name, ram, cpu):
+def genProceso(env, name, ram, cpu):
     global totalT
     
-    expo = random.expovariate(1.0/intervalo)
+    expo = int(random.expovariate(1.0/intervalo))
     yield env.timeout(expo)
     
     instrucciones = random.randint(1, 10)
-    instruccionesIniciales = instrucciones
+    mem = random.randint(1,10)
+    tEntrada = env.now
     
-    with ram.get(instrucciones) as entrada:
-        yield entrada
-        entrada = env.now
+    with ram.get(mem) as entrada:
+        yield entrada        
         
-        with cpu.request() as activo:
-            yield activo
-                    
-            #Version simple
-            while(instrucciones > 0):
-                yield env.timeout(1)
-                instrucciones -= 3
-            #Fin version simple
+        #Version uvg
+        estado = 2
+        while(instrucciones > 0):
+                
+            if(estado == 1):
+                #print("%s IO" %name)
+                with io.request() as waiting:
+                    yield waiting
+                    env.timeout(1)
+                estado = 2    
+            
+            while((estado == 2) and (instrucciones > 0)):
+                #print(name)
+                with cpu.request() as activo:
+                    yield activo
+                    yield env.timeout(1)
+                    instrucciones -= 3
+                estado = random.randint(1,2)
+        #Fin version uvg
         
-        yield ram.put(instruccionesIniciales)
+        yield ram.put(mem)
        
-    tfinal = env.now - entrada
+    tfinal = env.now - tEntrada
     print(name + ": %d" %tfinal)
     tiempos.append(tfinal)
     totalT += tfinal
 
 env = simpy.Environment()
-envIO = simpy.Environment()
 ram = simpy.Container(env, init = 100, capacity = 100)
-cpu = simpy.Resource(env, capacity = 2)
-io = simpy.Resource(envIO)
+cpu = simpy.Resource(env, capacity = 1)
+io = simpy.Resource(env)
 
 totalT = 0
 for i in range(procesos):
-    env.process(genProceso(env, envIO, "proceso %d"%i, ram, cpu))
-    
-#while procesosC > 0:
-    
+    env.process(genProceso(env, "proceso %d"%i, ram, cpu))
 
 env.run()
 
